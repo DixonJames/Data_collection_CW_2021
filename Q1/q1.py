@@ -5,6 +5,8 @@ import pandas as pd
 import random
 import urllib3
 import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
 import math
 
 import re
@@ -14,6 +16,8 @@ import csv
 import numpy
 import scipy
 import sklearn
+import gensim
+from collections import defaultdict
 
 try:
     print("downloading common wordlists")
@@ -40,8 +44,6 @@ def tokenizeString(article):
             important_words += (re.sub("\\\\", "", word) + " ")
 
     return [word.lower() for word in nltk.word_tokenize(important_words) if len(word) != 1 and (word not in blacklist) and word not in string.punctuation]
-
-
 
 class FileErr(Exception):
     pass
@@ -170,9 +172,13 @@ class fileMangagement:
 
     def getContent(self, keywords):
         """
-        goes though all collected data and returns 2 dcitarys containing the article and inportat words for
-        each keyword
-
+        goes though every keyword file that contains all its articles
+        then created a dicts (with keys being the keywords):
+        1. list of all articles separately
+        2. list of all articles combined into one big string
+        3. list of keywords (with blocking words removed)
+        :param keywords:
+        :return:
         """
         import os
         PROJECT_ROOT_DIR = "."
@@ -184,8 +190,10 @@ class fileMangagement:
         directory = os.fsencode(articles_path)
 
         totalAritcles = {}
+        seperateAritcles = {}
         for keyword in keywords:
             allArticels = ""
+            seperateAllArticles = []
 
             for folder in os.listdir(directory):
                 foldername = os.fsdecode(folder)
@@ -195,9 +203,12 @@ class fileMangagement:
                         if file_name.endswith(".txt"):
                             filename_str = os.fsdecode(file_name)
                             with open(os.path.join(PROJECT_ROOT_DIR, "data", "Articles", foldername, filename_str), "r", encoding="utf8") as f:
-                                allArticels += re.sub("([\<(\[]).*?([\)\]\>])", "",(f.read()))
+                                whole_article = f.read()
+                                allArticels += re.sub("([\<(\[]).*?([\)\]\>])", "",(whole_article))
+                                seperateAllArticles.append(re.sub("([\<(\[]).*?([\)\]\>])", "",(whole_article)))
 
             totalAritcles[f"{keyword}"] = allArticels
+            seperateAritcles[f"{keyword}"] = seperateAllArticles
 
 
         words_path = os.path.join(PROJECT_ROOT_DIR, "data", "Prominent_words")
@@ -221,11 +232,19 @@ class fileMangagement:
 
 
 
-        return totalAritcles, totalDataFrames
+        return seperateAritcles, totalAritcles, totalDataFrames
 
 
 
     def saveCSVFile(self, name, contents, subfolderName = None, baseFolder = None):
+        """
+        saves a CSV file to the directory specified
+        :param name:
+        :param contents:
+        :param subfolderName:
+        :param baseFolder:
+        :return:
+        """
         import os.path
 
         PROJECT_ROOT_DIR = "."
@@ -250,6 +269,12 @@ class fileMangagement:
 
 
     def downloadFile(self, url, CHAPTER_ID = None):
+        """
+        dowloads the resource at the specified URL to the file directory specified
+        :param url:
+        :param CHAPTER_ID:
+        :return:
+        """
         import requests
         import os.path
 
@@ -317,6 +342,11 @@ class similarity:
         self.vectorisingDict = {}
 
     def getVecSources(self):
+        """
+        goes though the directory and checks that the necessary resources have been downloaded and unzipped.
+        does downloads and unzips as necessary
+        """
+
         from pathlib import Path
         import zipfile
         url = "http://nlp.stanford.edu/data/glove.6B.zip"
@@ -348,6 +378,11 @@ class similarity:
 
 
     def vectoriseString(self, string):
+        """
+        uses the glove dataset to transform a word into a vector
+        :param string: the string to be vecorised
+        :return: vecotr as an array of ints
+        """
         #checks to see if correct resources have been downloaded, and gets them if nessisary
         self.getVecSources()
 
@@ -379,6 +414,12 @@ class similarity:
         return len(common) / len(union)
 
     def avgVecKeywords(self, keywords, lengthVec):
+        """
+        finds the averave vector for a list of keywords
+        :param keywords:
+        :param lengthVec:
+        :return:
+        """
         a_vec = [0 for i in range(lengthVec)]
         for w in list(keywords):
             w_vec = self.vectoriseString(w)
@@ -399,6 +440,70 @@ class similarity:
 
         return similarity
 
+class Doc2VecSimilarity:
+    def __init__(self, corpus, articles):
+        self.copus = self.prePorcesCorpus(corpus)
+        self.allArticles = articles
+
+        self.model = self.doc2VecPipeline()
+
+    def prePorcesCorpus(self, corpus):
+        s = set(stopwords.words('english'))
+        working_corpus = {}
+        for key in list(corpus):
+            articles = []
+            for article in range(len(corpus[key])):
+                articles.append(
+                    [word for word in gensim.utils.simple_preprocess(corpus[key][article]) if not (word in s)])
+            working_corpus[key] = articles
+
+        # frequencey for words
+
+        word_freq = defaultdict(int)
+        for key in list(working_corpus):
+            for aritcle in working_corpus[key]:
+                for word in aritcle:
+                    word_freq[word] += 1
+        index = 0
+        final_corpus = [[] for key in list(working_corpus)]
+        for key in list(working_corpus):
+            for aritcle in working_corpus[key]:
+                final_corpus[index].append([word for word in aritcle if word_freq[word] > 1])
+            index += 1
+
+        return final_corpus
+
+    def addTokens(self, doc, index):
+        tokens = gensim.utils.simple_preprocess(doc)
+        return gensim.models.doc2vec.TaggedDocument(tokens, [index])
+
+    def doc2VecVocab(self, corpai):
+        training_corpai = []
+        index = 0
+        for doc in corpai:
+            training_corpai.append(self.addTokens(corpai[doc], index))
+            index += 1
+
+        model = gensim.models.doc2vec.Doc2Vec(vector_size=50, min_count=2, epochs=40)
+        model.build_vocab(training_corpai)
+        return model, training_corpai
+
+
+    def doc2VecPipeline(self):
+        corpus = self.allArticles
+
+        model, training_corpai = self.doc2VecVocab(corpus)
+        model.train(training_corpai, total_examples=model.corpus_count, epochs=model.epochs)
+        return model
+
+    def cosineSimilarity(self, a_vec, b_vec):
+        from scipy import spatial
+        similarity = 1 - spatial.distance.cosine(a_vec, b_vec)
+
+        return similarity
+
+    def queryDoc2VecModel(self, articleString):
+        return self.model.infer_vector(gensim.utils.simple_preprocess(articleString))
 
 
 
@@ -440,6 +545,24 @@ def semanticSimDF(words_dict, article_dict, keywords):
 
     return res
 
+def article2Vec(corpus, article_dict, keywords):
+    keywordlist = list(keywords)
+    res = pd.DataFrame([[0.0 for i in range(len(keywordlist))] for i in range(len(keywordlist))], columns=keywordlist)
+    complexComparisonEngine = Doc2VecSimilarity(corpus, article_dict)
+
+    vectors = {article:complexComparisonEngine.queryDoc2VecModel(article_dict[article]) for article in keywordlist}
+
+    for keywordA in list(keywords):
+        index = 0
+        for keywordB in list(keywords):
+
+            distance = complexComparisonEngine.cosineSimilarity(vectors[keywordA], vectors[keywordB])
+
+            res[keywordA][index] = distance
+
+            index += 1
+
+    return res
 
 def normaliseDF(df):
     min, max = dfEdges(df)
@@ -452,16 +575,7 @@ def normaliseDF(df):
 
         df[f"{col_name}"] = new_vals
 
-
-
-
     return df
-
-
-
-
-    return min, max
-
 
 def dfEdges(df):
 
@@ -478,28 +592,49 @@ def dfEdges(df):
 
     return min, max
 
+class visualisation:
+    @staticmethod
+    def heatMap(dataframe):
+        ax = sns.heatmap(dataframe, vmin=0, vmax=1, annot=True, fmt="f",  linewidths=.5)
+
+
 if __name__ == '__main__':
     #gets all data:
-    #dataCollection().keywordDataCollection()
+
+    """ pulls from the BBC
+    dataCollection().keywordDataCollection()
+    """
+    #gets keywords form the Excell file
     keywords = fileMangagement().openXLS(path)['Keywords']
-    article_dict, words_dict = fileMangagement().getContent(keywords)
+    aritcles_corpus, article_dict, words_dict = fileMangagement().getContent(keywords)
 
-    comparisonEngine = similarity(words_dict, article_dict)
+    #comparisonEngine = similarity(words_dict, article_dict)
 
-    comparisonEngine.vectoriseString("hello")
 
+    complexComparisonEngine = Doc2VecSimilarity(aritcles_corpus, article_dict)
+
+
+    A2V_df = article2Vec(aritcles_corpus, article_dict, keywords)
+
+    #comparisonEngine.vectoriseString("hello")
 
     j_df = jacSimDF(words_dict, article_dict, keywords)
     #dfEdges(df)
 
-    #s_df = semanticSimDF(words_dict, article_dict, keywords)
+    s_df = semanticSimDF(words_dict, article_dict, keywords)
 
-    #j_df_n = normaliseDF(j_df)
-    #s_df = normaliseDF(s_df)
+    j_df_n = normaliseDF(j_df)
+    s_df_n = normaliseDF(s_df)
 
     #now normailse the DS
+    visualisation.heatMap(A2V_df)
+    plt.show()
+    visualisation.heatMap(j_df_n)
+    plt.show()
+    visualisation.heatMap(s_df_n)
+    plt.show()
 
-    print(j_df)
+    print(complexComparisonEngine)
 
 
 
