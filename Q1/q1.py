@@ -623,15 +623,15 @@ if __name__ == '__main__':
 
     s_df = semanticSimDF(words_dict, article_dict, keywords)
 
-    j_df_n = normaliseDF(j_df)
-    s_df_n = normaliseDF(s_df)
+    #j_df_n = normaliseDF(j_df)
+    #s_df_n = normaliseDF(s_df)
 
     #now normailse the DS
     visualisation.heatMap(A2V_df)
     plt.show()
-    visualisation.heatMap(j_df_n)
+    visualisation.heatMap(j_df)
     plt.show()
-    visualisation.heatMap(s_df_n)
+    visualisation.heatMap(s_df)
     plt.show()
 
     print(complexComparisonEngine)
