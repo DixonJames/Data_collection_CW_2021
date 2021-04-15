@@ -1,5 +1,7 @@
 from bs4 import BeautifulSoup as soup
 from nltk.corpus import stopwords
+from functools import cache
+from itertools import chain
 
 import pandas as pd
 import random
@@ -7,6 +9,8 @@ import urllib3
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
+import itertools
+from scipy import spatial
 import math
 
 import re
@@ -376,7 +380,7 @@ class similarity:
 
 
 
-
+    @cache
     def vectoriseString(self, string):
         """
         uses the glove dataset to transform a word into a vector
@@ -427,9 +431,24 @@ class similarity:
                 a_vec = np.add(a_vec, w_vec)
 
         for i in range(len(a_vec)):
-            a_vec[i] = a_vec[i] / lengthVec
+            a_vec[i] = a_vec[i] / len(list(keywords))
 
         return a_vec
+
+    def avgVector(self, listOfvectors):
+        a_vec = [0 for i in range(len(listOfvectors[0]))]
+
+        for w in listOfvectors:
+            if not (w is None):
+                a_vec = np.add(a_vec, w)
+
+        for i in range(len(listOfvectors[0])):
+            a_vec[i] = a_vec[i] / len(listOfvectors)
+
+        return a_vec
+
+    def vectoriseWord(self, word):
+        return  self.avgVecKeywords(word, 50)
 
     def cosineSimilarity(self, setA_keywords, setB_keywords):
         from scipy import spatial
@@ -442,12 +461,26 @@ class similarity:
 
 class Doc2VecSimilarity:
     def __init__(self, corpus, articles):
-        self.copus = self.prePorcesCorpus(corpus)
+        self.training_corpus = self.prePorcesCorpus(corpus)
         self.allArticles = articles
 
         self.model = self.doc2VecPipeline()
 
     def prePorcesCorpus(self, corpus):
+        """
+        docs = []
+        train_corpus = []
+        for kw in list(corpus):
+            for article in corpus[kw]:
+                docs.append(article)
+
+        docs = list(set(docs))
+
+        for i, line in enumerate(docs):
+            tokens = gensim.utils.simple_preprocess(line)
+            gensim.models.doc2vec.TaggedDocument(tokens, [i])
+        """
+
         s = set(stopwords.words('english'))
         working_corpus = {}
         for key in list(corpus):
@@ -474,14 +507,15 @@ class Doc2VecSimilarity:
         return final_corpus
 
     def addTokens(self, doc, index):
-        tokens = gensim.utils.simple_preprocess(doc)
+        stringver = ""
+        tokens = gensim.utils.simple_preprocess(' '.join(doc))
         return gensim.models.doc2vec.TaggedDocument(tokens, [index])
 
     def doc2VecVocab(self, corpai):
         training_corpai = []
         index = 0
         for doc in corpai:
-            training_corpai.append(self.addTokens(corpai[doc], index))
+            training_corpai.append(self.addTokens(doc, index))
             index += 1
 
         model = gensim.models.doc2vec.Doc2Vec(vector_size=50, min_count=2, epochs=40)
@@ -490,18 +524,24 @@ class Doc2VecSimilarity:
 
 
     def doc2VecPipeline(self):
-        corpus = self.allArticles
+        corpus = []
+        for kw in self.training_corpus:
+            for doc in kw:
+                corpus.append(doc)
+        corpus.sort()
+        corpus = list(corpus for corpus, _ in itertools.groupby(corpus))
 
         model, training_corpai = self.doc2VecVocab(corpus)
         model.train(training_corpai, total_examples=model.corpus_count, epochs=model.epochs)
         return model
 
+    @cache
     def cosineSimilarity(self, a_vec, b_vec):
-        from scipy import spatial
         similarity = 1 - spatial.distance.cosine(a_vec, b_vec)
 
         return similarity
 
+    @cache
     def queryDoc2VecModel(self, articleString):
         return self.model.infer_vector(gensim.utils.simple_preprocess(articleString))
 
@@ -524,16 +564,22 @@ def jacSimDF(words_dict, article_dict, keywords):
 
             distance = similarity(words_dict, article_dict).jaccardSimilarity(set(words_dict[keywordA]["0"]) - common, set(words_dict[keywordB]["0"]) - common)
             if distance == 1.0:
-                res[keywordA][word_index] = 0.0
+                res[keywordA][word_index] = 1.0
             else:
                 res[keywordA][word_index] = distance
 
     return res
 
-def semanticSimDF(words_dict, article_dict, keywords):
+def semanticSimDF(words_dict, article_dict, corpus,  keywords, justVecs = False):
     keywordlist = list(keywords)
     res = pd.DataFrame([[0.0 for i in range(len(keywordlist))] for i in range(len(keywordlist))], columns=keywordlist)
     workspace = similarity(words_dict, article_dict)
+
+    if justVecs:
+        labels = list(chain.from_iterable([[k_word for article in corpus[k_word]] for k_word in keywordlist]))
+        vecs = list(chain.from_iterable([[workspace.avgVecKeywords(article, 50) for article in corpus[k_word]] for k_word in keywordlist]))
+        return vecs, labels
+
 
     for keywordA in list(keywords):
         for keywordB in list(keywords):
@@ -545,24 +591,43 @@ def semanticSimDF(words_dict, article_dict, keywords):
 
     return res
 
-def article2Vec(corpus, article_dict, keywords):
+def Doc2VecDF(corpus, article_dict, keywords, justVecs = False):
     keywordlist = list(keywords)
-    res = pd.DataFrame([[0.0 for i in range(len(keywordlist))] for i in range(len(keywordlist))], columns=keywordlist)
+    vector_res = pd.DataFrame([[0.0 for i in range(len(keywordlist))] for i in range(len(keywordlist))], columns=keywordlist)
+
     complexComparisonEngine = Doc2VecSimilarity(corpus, article_dict)
 
-    vectors = {article:complexComparisonEngine.queryDoc2VecModel(article_dict[article]) for article in keywordlist}
+    if justVecs:
+        labels = list(chain.from_iterable([[k_word for article in corpus[k_word]] for k_word in keywordlist]))
+        vecs = list(chain.from_iterable([[complexComparisonEngine.queryDoc2VecModel(article) for article in corpus[k_word]] for k_word in keywordlist]))
+        return vecs, labels
+
+    #one vector per keyword
+    #vectors = {article : complexComparisonEngine.queryDoc2VecModel(article_dict[article]) for article in keywordlist}
+    #one vector per article
+    vectors = {k_word: [complexComparisonEngine.queryDoc2VecModel(article) for article in corpus[k_word]] for k_word in keywordlist}
+
+
 
     for keywordA in list(keywords):
         index = 0
         for keywordB in list(keywords):
+            vector_distances = 0
 
-            distance = complexComparisonEngine.cosineSimilarity(vectors[keywordA], vectors[keywordB])
 
-            res[keywordA][index] = distance
+            if keywordB == keywordA:
+                vector_res[keywordA][index] = 1.0
+            else:
+                for articleA in vectors[keywordA]:
+                    for articleB in vectors[keywordB]:
+                        vector_distances += 1 - spatial.distance.cosine(articleA, articleB)
+
+                vector_res[keywordA][index] = vector_distances / (len(vectors[keywordA]) * (len(vectors[keywordB])))
 
             index += 1
+    return vector_res
 
-    return res
+
 
 def normaliseDF(df):
     min, max = dfEdges(df)
@@ -571,7 +636,10 @@ def normaliseDF(df):
         vals = df[f"{col_name}"]
         new_vals = []
         for val in vals:
-            new_vals.append((val - min)/(max - min))
+            newval = (val - min)/(max - min)
+            if newval > 1:
+                newval = 1
+            new_vals.append(newval)
 
         df[f"{col_name}"] = new_vals
 
@@ -582,8 +650,8 @@ def dfEdges(df):
     min = 1.0
     max = 0.0
     for col_name in df.columns:
-        col_min = sorted(list(df[col_name]))[1]
-        col_max = sorted(list(df[col_name]))[-1]
+        col_min = sorted(list(df[col_name]))[0]
+        col_max = sorted(list(df[col_name]))[-2]
 
         if col_min < min:
             min = col_min
@@ -595,7 +663,83 @@ def dfEdges(df):
 class visualisation:
     @staticmethod
     def heatMap(dataframe):
+
+        dataframe.index = dataframe.columns
         ax = sns.heatmap(dataframe, vmin=0, vmax=1, annot=True, fmt="f",  linewidths=.5)
+
+    @staticmethod
+    def TwoDRepGraph(vectors, labels, mean = False):
+        from sklearn.manifold import TSNE
+
+        target = labels
+
+        tsne = TSNE(n_components = 3)
+        X_train_ = tsne.fit_transform(pd.DataFrame(vectors))
+
+        df_graph = pd.DataFrame(X_train_, columns=['x', 'y'])
+        df_graph['keyword'] = labels
+
+        if mean:
+            meanpoints = df_graph.groupby('keyword', as_index=False)['x'].mean()
+            meanpoints['y'] = (df_graph.groupby('keyword', as_index=False)['y'].mean())['y']
+
+            sns.scatterplot(meanpoints['x'], meanpoints['y'], hue=meanpoints['keyword'], palette='colorblind')
+
+
+        sns.scatterplot(df_graph['x'], df_graph['y'], hue = df_graph['keyword'], palette='colorblind')
+
+
+
+    @staticmethod
+    def buildingGraphDF():
+        #for doc2vec
+        vecs, labels = Doc2VecDF(aritcles_corpus, article_dict, keywords, True)
+        #for GloVe
+        #vecs, labels = semanticSimDF(words_dict, article_dict, aritcles_corpus, keywords, True)
+
+        visualisation.TwoDRepGraph(vecs, labels, True)
+
+        df = pd.DataFrame(vecs)
+        df['keyword'] = labels
+
+
+    @staticmethod
+    def averageDataFrame(dfList):
+        collumbs = list(dfList[0])
+        overall_mean_df = pd.DataFrame()
+
+        for col in collumbs:
+            coldf = pd.DataFrame()
+            index = 0
+            for df in dfList:
+                index += 1
+                coldf[f"{index}_col"] = df[col]
+
+
+            all_cols = coldf.loc[:, f"1_col":f"{index}_col"]
+
+            overall_mean_df[f'{col}'] = all_cols.mean(axis=1)
+
+        return overall_mean_df
+
+    @staticmethod
+    def keywordExample(dfList, colname):
+        #order = Jaccard, GloVe, Doc2Vec
+        collumbs = list(dfList[0])
+        overall_col = pd.DataFrame()
+
+        overall_col["Jaccard"] = dfList[0][colname]
+        overall_col["GloVe"] = dfList[1][colname]
+        overall_col["Doc2Vec"] = dfList[2][colname]
+
+        overall_col.index = overall.columns
+
+        return overall_col
+
+
+
+
+
 
 
 if __name__ == '__main__':
@@ -608,33 +752,44 @@ if __name__ == '__main__':
     keywords = fileMangagement().openXLS(path)['Keywords']
     aritcles_corpus, article_dict, words_dict = fileMangagement().getContent(keywords)
 
-    #comparisonEngine = similarity(words_dict, article_dict)
 
 
-    complexComparisonEngine = Doc2VecSimilarity(aritcles_corpus, article_dict)
+
+    """
+    graphing
+    """
+    #s_df = semanticSimDF(words_dict, article_dict, aritcles_corpus, keywords, True)
+
+    visualisation.buildingGraphDF()
 
 
-    A2V_df = article2Vec(aritcles_corpus, article_dict, keywords)
 
-    #comparisonEngine.vectoriseString("hello")
+
+
+    D2V_df = Doc2VecDF(aritcles_corpus, article_dict, keywords)
 
     j_df = jacSimDF(words_dict, article_dict, keywords)
-    #dfEdges(df)
 
-    s_df = semanticSimDF(words_dict, article_dict, keywords)
+    s_df = semanticSimDF(words_dict, article_dict, aritcles_corpus, keywords, False)
 
-    #j_df_n = normaliseDF(j_df)
-    #s_df_n = normaliseDF(s_df)
+    j_df = normaliseDF(j_df)
+    s_df = normaliseDF(s_df)
+    D2V_df = normaliseDF(D2V_df)
+
+    overall = visualisation.averageDataFrame([j_df, s_df, D2V_df])
+    keyword = visualisation.keywordExample([j_df, s_df, D2V_df], 'DoS attack')
+
+
 
     #now normailse the DS
-    visualisation.heatMap(A2V_df)
+    visualisation.heatMap(D2V_df)
     plt.show()
     visualisation.heatMap(j_df)
     plt.show()
     visualisation.heatMap(s_df)
     plt.show()
 
-    print(complexComparisonEngine)
+
 
 
 
