@@ -11,12 +11,10 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-
 from pathlib import Path
 import zipfile
 from scipy import spatial
 from sklearn.manifold import TSNE
-
 
 import re
 import nltk
@@ -24,8 +22,6 @@ import nltk
 import gensim
 import string
 import os
-
-
 
 import requests
 
@@ -41,29 +37,11 @@ except:
 path = "distance.xlsx"
 
 
-def tokenizeString(article):
-    """
-    removed common words and splits atricle into tokens in an array
-    :param article: one string
-    :return: list of words/tokens
-    """
-
-    blacklist = set({"'", '``', '\'\''})
-    s = set(stopwords.words('english'))
-    article = article.replace(".", "")
-    important_words = ""
-    for word in article.split():
-        if word not in s:
-            important_words += (re.sub("\\\\", "", word) + " ")
-
-    return [word.lower() for word in nltk.word_tokenize(important_words) if
-            len(word) != 1 and (word not in blacklist) and word not in string.punctuation]
-
-
 class FileErr(Exception):
     pass
 
 
+# Q1
 class BBCextraction:
 
     def getPage(self, url, eaxtraHeaders):
@@ -84,7 +62,8 @@ class BBCextraction:
 
     def extractBBCLinks(self, data):
         links = []
-        containers = data.findAll("div", {"class": "ssrcss-1q56g2r-PromoPortrait-PromoSwitchLayoutAtBreakpoints e3z3r3u0"})
+        containers = data.findAll("div",
+                                  {"class": "ssrcss-1q56g2r-PromoPortrait-PromoSwitchLayoutAtBreakpoints e3z3r3u0"})
         for c in containers:
             url_section = c.findAll("div", {"class": "ssrcss-1bn8j6y-PromoContent e1f5wbog0"})
             if c.a["href"].split("/")[3] == "news":
@@ -138,10 +117,11 @@ class BBCextraction:
                 if c.a["href"]:
                     links.append(c.a["href"])
 
-            #promo articles on the side of news page
+            # promo articles on the side of news page
             if len(c.findAll("a", {"class": "ssrcss-1av146u-PromoHeadline e1f5wbog1"})) == 0 and len(c.contents) != 0:
-
-                clean_paragraphs.append(re.sub('<[^>]+>', '',re.sub("<([\(\[]).*?([\)\]])>", "\g<1>\g<2>",(re.sub("\\\\", "", str(c.contents[0]))).replace("\\", ""))))
+                clean_paragraphs.append(re.sub('<[^>]+>', '', re.sub("<([\(\[]).*?([\)\]])>", "\g<1>\g<2>",
+                                                                     (re.sub("\\\\", "", str(c.contents[0]))).replace(
+                                                                         "\\", ""))))
 
             article = ""
 
@@ -161,7 +141,6 @@ class fileMangagement:
             raise FileErr() from e
 
     def saveTextFile(self, name, contents, subfolderName=None, basefolder=None):
-
 
         PROJECT_ROOT_DIR = "."
 
@@ -249,20 +228,17 @@ class fileMangagement:
 
     def openSavedPage(self, keyword, number):
 
-
         PROJECT_ROOT_DIR = "."
         keyword_file = keyword + f"_page_{number}.txt"
         words_path = os.path.join(PROJECT_ROOT_DIR, "data", "BBC_pages", f"{keyword}")
 
         try:
 
-            with open(os.path.join("data", "BBC_pages",f"{keyword}_pages", f"{keyword_file}"), encoding="utf-8") as f:
+            with open(os.path.join("data", "BBC_pages", f"{keyword}_pages", f"{keyword_file}"), encoding="utf-8") as f:
                 data = soup(f.read(), "html.parser")
                 return data
         except:
             print("file open issue")
-
-
 
     def saveCSVFile(self, name, contents, subfolderName=None, baseFolder=None):
         """
@@ -273,7 +249,6 @@ class fileMangagement:
         :param baseFolder:
         :return:
         """
-
 
         PROJECT_ROOT_DIR = "."
 
@@ -302,7 +277,6 @@ class fileMangagement:
         :return:
         """
 
-
         PROJECT_ROOT_DIR = "."
 
         if CHAPTER_ID == None:
@@ -319,86 +293,23 @@ class fileMangagement:
             code.write(r.content)
 
 
-class dataCollection:
+def tokenizeString(article):
+    """
+    removed common words and splits atricle into tokens in an array
+    :param article: one string
+    :return: list of words/tokens
+    """
 
-    @staticmethod
-    def keyWordWebpageContent():
-        """ PROBLEM 1
-        goes though all keywords
-        finds the first 100 most relevant bbc articles and downloads pages
-        downloads the articles contents and stores in data/Articles
-        :result: article content stored in the file system
-        """
-        keywords = fileMangagement().openXLS(path)['Keywords']
-        testURL = "https://www.bbc.co.uk/search"
+    blacklist = set({"'", '``', '\'\''})
+    s = set(stopwords.words('english'))
+    article = article.replace(".", "")
+    important_words = ""
+    for word in article.split():
+        if word not in s:
+            important_words += (re.sub("\\\\", "", word) + " ")
 
-        # testing
-        # keywords = ["Durham"]
-        wordnum = 0
-        for word in list(keywords):
-            wordnum += 1
-
-            links = []
-            prominent_words = []
-            first_word = 0
-            while len(links) < 100 and first_word <= len(word):
-                s_parts = word.split(" ")[first_word:]
-                searchword = ""
-                for part in s_parts:
-                    searchword += (part + " ")
-                searchword = searchword[:-1]
-
-                links.extend(BBCextraction().BBCsearch(searchword))
-                links = list(set(links))
-                first_word += 1
-
-            i = 0
-            links = links[:100]
-            for link in links:
-                print(int((i / len(links)) * 100), "%, of:", wordnum, "/", len(list(keywords)), "keywords")
-                i += 1
-
-                content = BBCextraction().getPage(link, None)
-                fileMangagement().saveTextFile(f"{word}_page_{i}", str(content), f"{word}_pages", "BBC_pages")
-
-    @staticmethod
-    def articleContentCollection():
-        """ PROBLEM 2
-        goes though all keywords
-        finds the first 100 most relevant bbc articles and extracts the article contents
-        downloads the articles contents and stores in data/Articles
-        :result: article content stored in the file system
-        """
-        keywords = fileMangagement().openXLS(path)['Keywords']
-        testURL = "https://www.bbc.co.uk/search"
-
-        # testing
-        # keywords = ["Durham"]
-        wordnum = 0
-        for word in list(keywords):
-            wordnum += 1
-
-            links = []
-            prominent_words = []
-            first_word = 0
-
-
-            PROJECT_ROOT_DIR = "."
-            words_path = os.path.join(PROJECT_ROOT_DIR, "data", "BBC_pages", f"{word}_pages")
-            link_num = len([name for name in os.listdir(words_path) if os.path.isfile(os.path.join(words_path, name))])
-
-            for link in range(1, link_num+1):
-                print(((link ), "%, of:", wordnum, "/", len(list(keywords)), "keywords"))
-
-                content = fileMangagement().openSavedPage(word, link)
-
-                externalLinks, article = BBCextraction().extractArticle(content)
-                fileMangagement().saveTextFile(f"{word}_article_{link}", article, f"{word}_articles", "Articles")
-
-                prominent_words.extend(tokenizeString(article))
-
-            fileMangagement().saveCSVFile(f"{word}_prominent_words", list(set(prominent_words)), f"{word}",
-                                          "Prominent_words")
+    return [word.lower() for word in nltk.word_tokenize(important_words) if
+            len(word) != 1 and (word not in blacklist) and word not in string.punctuation]
 
 
 class similarity:
@@ -413,7 +324,6 @@ class similarity:
         goes though the directory and checks that the necessary resources have been downloaded and unzipped.
         does downloads and unzips as necessary
         """
-
 
         url = "http://nlp.stanford.edu/data/glove.6B.zip"
 
@@ -729,7 +639,6 @@ class visualisation:
     @staticmethod
     def TwoDRepGraph(vectors, labels, mean=False):
 
-
         target = labels
 
         tsne = TSNE(n_components=2)
@@ -802,11 +711,92 @@ class visualisation:
         overall_col["GloVe"] = dfList[1][colname]
         overall_col["Doc2Vec"] = dfList[2][colname]
 
-        #overall_col.index = overall_col.columns
+        # overall_col.index = overall_col.columns
 
         return overall_col
 
 
+# question 1
+def keyWordWebpageContent():
+    """ PROBLEM 1
+    goes though all keywords
+    finds the first 100 most relevant bbc articles and downloads pages
+    downloads the articles contents and stores in data/Articles
+    :result: article content stored in the file system
+    """
+    keywords = fileMangagement().openXLS(path)['Keywords']
+    testURL = "https://www.bbc.co.uk/search"
+
+    # testing
+    # keywords = ["Durham"]
+    wordnum = 0
+    for word in list(keywords):
+        wordnum += 1
+
+        links = []
+        prominent_words = []
+        first_word = 0
+        while len(links) < 100 and first_word <= len(word):
+            s_parts = word.split(" ")[first_word:]
+            searchword = ""
+            for part in s_parts:
+                searchword += (part + " ")
+            searchword = searchword[:-1]
+
+            links.extend(BBCextraction().BBCsearch(searchword))
+            links = list(set(links))
+            first_word += 1
+
+        i = 0
+        links = links[:100]
+        for link in links:
+            print(int((i / len(links)) * 100), "%, of:", wordnum, "/", len(list(keywords)), "keywords")
+            i += 1
+
+            content = BBCextraction().getPage(link, None)
+            fileMangagement().saveTextFile(f"{word}_page_{i}", str(content), f"{word}_pages", "BBC_pages")
+
+
+# question 2
+def articleContentCollection():
+    """ PROBLEM 2
+    goes though all keywords
+    finds the first 100 most relevant bbc articles and extracts the article contents
+    downloads the articles contents and stores in data/Articles
+    :result: article content stored in the file system
+    """
+    keywords = fileMangagement().openXLS(path)['Keywords']
+    testURL = "https://www.bbc.co.uk/search"
+
+    # testing
+    # keywords = ["Durham"]
+    wordnum = 0
+    for word in list(keywords):
+        wordnum += 1
+
+        links = []
+        prominent_words = []
+        first_word = 0
+
+        PROJECT_ROOT_DIR = "."
+        words_path = os.path.join(PROJECT_ROOT_DIR, "data", "BBC_pages", f"{word}_pages")
+        link_num = len([name for name in os.listdir(words_path) if os.path.isfile(os.path.join(words_path, name))])
+
+        for link in range(1, link_num + 1):
+            print(((link), "%, of:", wordnum, "/", len(list(keywords)), "keywords"))
+
+            content = fileMangagement().openSavedPage(word, link)
+
+            externalLinks, article = BBCextraction().extractArticle(content)
+            fileMangagement().saveTextFile(f"{word}_article_{link}", article, f"{word}_articles", "Articles")
+
+            prominent_words.extend(tokenizeString(article))
+
+        fileMangagement().saveCSVFile(f"{word}_prominent_words", list(set(prominent_words)), f"{word}",
+                                      "Prominent_words")
+
+
+# question 3
 def symanticSimilarityScoring(jaccard=True, glove=True, DOCtoVEC=True):
     """question3
     goes though keywords
@@ -845,14 +835,16 @@ def symanticSimilarityScoring(jaccard=True, glove=True, DOCtoVEC=True):
         s_df = normaliseDF(s_df)
         list_measuremts.append(s_df)
 
-    #overall combination of them all
+    # overall combination of them all
 
     overall = visualisation.averageDataFrame(list_measuremts)
 
     return list_measuremts, overall
 
 
-def graphing(list_measuremts, plot_individual=False, plot_overall=False, plot_specific=False, specific_name=None, plot_vectorReduction=False, vecReductionOption=1):
+# question 4
+def graphing(list_measuremts, plot_individual=False, plot_overall=False, plot_specific=False, specific_name=None,
+             plot_vectorReduction=False, vecReductionOption=1):
     """question 4
     plots the graphs seen in the report
     :param list_measurements: list of measurements dataframes output form question 3
@@ -893,10 +885,10 @@ def graphing(list_measuremts, plot_individual=False, plot_overall=False, plot_sp
 
 def main(qOne=False, qTwo=False, qThree=False, qFour=False):
     if qOne:
-        dataCollection.keyWordWebpageContent()
+        keyWordWebpageContent()
     if qTwo:
         print("WARNING from ldzc78: please ensure you have run Question(s): 1 previously")
-        dataCollection.articleContentCollection()
+        articleContentCollection()
     if qThree:
         print("WARNING from ldzc78: please ensure you have run Question(s): 1,2 previously")
         list_measuremts, overall = symanticSimilarityScoring(jaccard=True, glove=True, DOCtoVEC=True)
@@ -907,9 +899,6 @@ def main(qOne=False, qTwo=False, qThree=False, qFour=False):
         graphing(list_measuremts, plot_individual=True, plot_overall=True, plot_specific=True, specific_name=None,
                  plot_vectorReduction=True, vecReductionOption=1)
 
+
 if __name__ == '__main__':
     main(qOne=True, qTwo=True, qThree=False, qFour=True)
-
-
-
-
