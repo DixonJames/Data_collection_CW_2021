@@ -1,3 +1,9 @@
+#python 3.9 - for package versions used see the 'package versions.txt'
+#developed and tested on windows 10
+#(file directory commands are used so please run on windows as has not been tested on linux)
+
+#runtime: roughly 10-20m depending on internet speed
+
 from bs4 import BeautifulSoup as soup
 from nltk.corpus import stopwords
 from functools import cache
@@ -9,7 +15,7 @@ import urllib3
 import numpy as np
 
 import seaborn as sns
-import matplotlib.pyplot as plt
+
 
 from pathlib import Path
 import zipfile
@@ -27,6 +33,9 @@ import requests
 
 from collections import defaultdict
 
+
+
+
 try:
     print("downloading common wordlists")
     nltk.download('stopwords')
@@ -34,7 +43,7 @@ try:
 except:
     print("couldn't download latest lists")
 
-path = "distance.xlsx"
+path = "Keywords.xlsx"
 
 
 class FileErr(Exception):
@@ -43,8 +52,15 @@ class FileErr(Exception):
 
 # Q1
 class BBCextraction:
+    #part of question 1
 
     def getPage(self, url, eaxtraHeaders):
+        """
+        downloads page content
+        :param url: url to get content form
+        :param eaxtraHeaders:  url peramiteors
+        :return:
+        """
 
         usrAgnt = f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/{random.randint(0, 1000)}.{random.randint(0, 50)} (KHTML, like Gecko) Chrome/{random.randint(10, 99)}.{random.randint(10, 99)}.{random.randint(1000, 9999)}.{random.randint(100, 999)} Safari/{random.randint(100, 999)}.{random.randint(10, 99)}"
 
@@ -61,6 +77,12 @@ class BBCextraction:
         return data
 
     def extractBBCLinks(self, data):
+        """
+        finds links for news articles on bbc page of the results of a search
+        NOTE: class label is changed by BBC when they update their site
+        :param data:
+        :return:
+        """
         links = []
         containers = data.findAll("div",
                                   {"class": "ssrcss-1q56g2r-PromoPortrait-PromoSwitchLayoutAtBreakpoints e3z3r3u0"})
@@ -98,6 +120,12 @@ class BBCextraction:
         return links
 
     def extractArticle(self, data):
+        """
+        parsese a BBC news article and removed the news paragrapgs from the rest of the page
+        NOTE: tags may change when BBC website is updated
+        :param data: HTML of page
+        :return: list fo links in the page; the news article
+        """
 
         links = []
         try:
@@ -132,8 +160,14 @@ class BBCextraction:
 
 
 class fileMangagement:
+    # part of question 1,2
 
     def openXLS(self, path):
+        """
+        opens xls file at aprcified path
+        :param path:
+        :return:
+        """
         try:
             keywords = pd.read_excel(path)
             return keywords
@@ -141,6 +175,46 @@ class fileMangagement:
             raise FileErr() from e
 
     def saveTextFile(self, name, contents, subfolderName=None, basefolder=None):
+        """
+        saves text file at specified path
+        :param name:
+        :param contents:
+        :param subfolderName:
+        :param basefolder:
+        :return:
+        """
+
+        PROJECT_ROOT_DIR = "."
+
+        if basefolder == None:
+            CHAPTER_ID = "BBC_pages"
+        else:
+            CHAPTER_ID = basefolder
+
+        if subfolderName == None:
+            save_path = os.path.join(PROJECT_ROOT_DIR, "data", CHAPTER_ID)
+        else:
+            save_path = os.path.join(PROJECT_ROOT_DIR, "data", CHAPTER_ID, subfolderName)
+
+        os.makedirs(save_path, exist_ok=True)
+
+        completeName = os.path.join(save_path, name + ".txt")
+
+        with open(completeName, "w", encoding='utf-8') as file:
+            try:
+                file.write(contents)
+            except:
+                print("file write issue")
+
+    def savexlsFile(self, name, contents, subfolderName=None, basefolder=None):
+        """
+        saves CSV file at specified path
+        :param name:
+        :param contents:
+        :param subfolderName:
+        :param basefolder:
+        :return:
+        """
 
         PROJECT_ROOT_DIR = "."
 
@@ -227,6 +301,12 @@ class fileMangagement:
         return seperateAritcles, totalAritcles, totalDataFrames
 
     def openSavedPage(self, keyword, number):
+        """
+        goes though created file structure and gets a previously saved page
+        :param keyword: keyword article was extracted under
+        :param number: the article number for the keyword
+        :return:
+        """
 
         PROJECT_ROOT_DIR = "."
         keyword_file = keyword + f"_page_{number}.txt"
@@ -294,11 +374,13 @@ class fileMangagement:
 
 
 def tokenizeString(article):
+    # part of question 3
     """
     removed common words and splits atricle into tokens in an array
     :param article: one string
     :return: list of words/tokens
     """
+
 
     blacklist = set({"'", '``', '\'\''})
     s = set(stopwords.words('english'))
@@ -313,6 +395,7 @@ def tokenizeString(article):
 
 
 class similarity:
+    # part of question 3
     def __init__(self, keywords, articles):
         self.dict_keywords = keywords
         self.article = articles
@@ -340,7 +423,7 @@ class similarity:
         if not (my_file.is_file()):
             print("extracting ZIP")
 
-            with zipfile.ZipFile("models/pretrainedModels/love.6B.zip", 'r') as zip_ref:
+            with zipfile.ZipFile("models/pretrainedModels/glove.6B.zip", 'r') as zip_ref:
                 zip_ref.extractall(".")
 
         my_file = Path("glove.6B.50d.txt")
@@ -402,6 +485,11 @@ class similarity:
         return a_vec
 
     def avgVector(self, listOfvectors):
+        """
+        finds the average vector by taking average of each dimensions value with their peers
+        :param listOfvectors:
+        :return:
+        """
         a_vec = [0 for i in range(len(listOfvectors[0]))]
 
         for w in listOfvectors:
@@ -414,9 +502,20 @@ class similarity:
         return a_vec
 
     def vectoriseWord(self, word):
+        """
+        turns a word into a numeric vector
+        :param word:
+        :return:
+        """
         return self.avgVecKeywords(word, 50)
 
     def cosineSimilarity(self, setA_keywords, setB_keywords):
+        """
+        fidns the cosine score of similarity between two vectors
+        :param setA_keywords:
+        :param setB_keywords:
+        :return:
+        """
 
         a_vec = self.avgVecKeywords(setA_keywords["0"], 50)
         b_vec = self.avgVecKeywords(setB_keywords["0"], 50)
@@ -427,6 +526,7 @@ class similarity:
 
 
 class Doc2VecSimilarity:
+    # part of question 3
     def __init__(self, corpus, articles):
         self.training_corpus = self.prePorcesCorpus(corpus)
         self.allArticles = articles
@@ -435,18 +535,12 @@ class Doc2VecSimilarity:
 
     def prePorcesCorpus(self, corpus):
         """
-        docs = []
-        train_corpus = []
-        for kw in list(corpus):
-            for article in corpus[kw]:
-                docs.append(article)
-
-        docs = list(set(docs))
-
-        for i, line in enumerate(docs):
-            tokens = gensim.utils.simple_preprocess(line)
-            gensim.models.doc2vec.TaggedDocument(tokens, [i])
+        removes stopwords
+        and words appearing only one time
+        :param corpus:
+        :return:
         """
+
 
         s = set(stopwords.words('english'))
         working_corpus = {}
@@ -474,11 +568,22 @@ class Doc2VecSimilarity:
         return final_corpus
 
     def addTokens(self, doc, index):
+        """
+        tokenizes a document into list of words
+        :param doc: big docuemtb string
+        :param index:
+        :return: list of words
+        """
         stringver = ""
         tokens = gensim.utils.simple_preprocess(' '.join(doc))
         return gensim.models.doc2vec.TaggedDocument(tokens, [index])
 
     def doc2VecVocab(self, corpai):
+        """
+        trainds the doc2vec model with the corpus of documents
+        :param corpai:
+        :return:
+        """
         training_corpai = []
         index = 0
         for doc in corpai:
@@ -490,6 +595,10 @@ class Doc2VecSimilarity:
         return model, training_corpai
 
     def doc2VecPipeline(self):
+        """
+        main structure for training  and testing the doc2vec model
+        :return: trainde doc2vec model
+        """
         corpus = []
         for kw in self.training_corpus:
             for doc in kw:
@@ -503,16 +612,35 @@ class Doc2VecSimilarity:
 
     @cache
     def cosineSimilarity(self, a_vec, b_vec):
+        """
+        computed cosine similarity between two vectors
+        :param a_vec:
+        :param b_vec:
+        :return:
+        """
         similarity = 1 - spatial.distance.cosine(a_vec, b_vec)
 
         return similarity
 
     @cache
     def queryDoc2VecModel(self, articleString):
+        """
+        queries the trained model with a string
+        :param articleString: query string
+        :return: vectorisation of said input string
+        """
         return self.model.infer_vector(gensim.utils.simple_preprocess(articleString))
 
 
 def jacSimDF(words_dict, article_dict, keywords):
+    # part of question 3
+    """
+    goes though each keyword and computes its jaccard similarity
+    :param words_dict:
+    :param article_dict:
+    :param keywords:
+    :return:
+    """
     keywordlist = list(keywords)
     res = pd.DataFrame([[0.0 for i in range(len(keywordlist))] for i in range(len(keywordlist))], columns=keywordlist)
 
@@ -536,6 +664,16 @@ def jacSimDF(words_dict, article_dict, keywords):
 
 
 def semanticSimDF(words_dict, article_dict, corpus, keywords, justVecs=False):
+    # part of question 3
+    """
+    goes though each keyword and computes its similarity based upon the GloVe dataset
+    :param words_dict:
+    :param article_dict:
+    :param corpus:
+    :param keywords:
+    :param justVecs:
+    :return:
+    """
     keywordlist = list(keywords)
     res = pd.DataFrame([[0.0 for i in range(len(keywordlist))] for i in range(len(keywordlist))], columns=keywordlist)
     workspace = similarity(words_dict, article_dict)
@@ -558,6 +696,15 @@ def semanticSimDF(words_dict, article_dict, corpus, keywords, justVecs=False):
 
 
 def Doc2VecDF(corpus, article_dict, keywords, justVecs=False):
+    # part of question 3
+    """
+    calculates the similarity between each keyword based upon the doc2vec model
+    :param corpus:
+    :param article_dict:
+    :param keywords:
+    :param justVecs:
+    :return:
+    """
     keywordlist = list(keywords)
     vector_res = pd.DataFrame([[0.0 for i in range(len(keywordlist))] for i in range(len(keywordlist))],
                               columns=keywordlist)
@@ -596,6 +743,16 @@ def Doc2VecDF(corpus, article_dict, keywords, justVecs=False):
 
 
 def normaliseDF(df):
+    # part of question 3
+    """
+    mormalise DFs similarity scores to better span across 1-0 gap
+    able to differentiate between scored better.
+    NOTE:   this will mean that at the least and most similar scores will be 1 and 0 respectively
+            this should just be noted to mean that they are most/least similar in their paris
+            NOT that they are identical of compleastly the opposite
+    :param df:
+    :return:
+    """
     min, max = dfEdges(df)
 
     for col_name in df.columns:
@@ -613,6 +770,12 @@ def normaliseDF(df):
 
 
 def dfEdges(df):
+    # part of question 3
+    """
+    fidns the largest and smallest similarity score in the DF
+    :param df:
+    :return:
+    """
     min = 1.0
     max = 0.0
     for col_name in df.columns:
@@ -628,8 +791,14 @@ def dfEdges(df):
 
 
 class visualisation:
+    # part of question 4
     @staticmethod
     def heatMap(dataframe):
+        """
+        creates seaborn heatmap of dataframe
+        :param dataframe:
+        :return:
+        """
         try:
             dataframe.index = dataframe.columns
             sns.heatmap(dataframe, vmin=0, vmax=1, annot=True, fmt="f", linewidths=.5)
@@ -638,6 +807,13 @@ class visualisation:
 
     @staticmethod
     def TwoDRepGraph(vectors, labels, mean=False):
+        """
+        creates scatter plot in 2D from many vectors of dimensions >> 2
+        :param vectors:
+        :param labels:
+        :param mean:
+        :return:
+        """
 
         target = labels
 
@@ -678,6 +854,11 @@ class visualisation:
 
     @staticmethod
     def averageDataFrame(dfList):
+        """
+        goes though the list of DFs and finds the average similarity score for each pair of keywords
+        :param dfList:
+        :return:
+        """
         collumbs = list(dfList[0])
         overall_mean_df = pd.DataFrame()
 
@@ -695,9 +876,9 @@ class visualisation:
         overall_mean_df.index = overall_mean_df.columns
 
         for row in list(overall_mean_df.index):
-            for coll in list(overall_mean_df.columns):
-                if row == col:
-                    overall_mean_df[coll][row] = np.nan
+            for collumb in list(overall_mean_df.columns):
+                if row == collumb:
+                    overall_mean_df[collumb][row] = 1.0
 
         return overall_mean_df
 
@@ -714,6 +895,10 @@ class visualisation:
         # overall_col.index = overall_col.columns
 
         return overall_col
+
+    def vectorToScatter(self, distance_df):
+        pass
+        #visualisation.TwoDRepGraph(vecs, labels, True)
 
 
 # question 1
@@ -861,28 +1046,28 @@ def graphing(list_measuremts, plot_individual=False, plot_overall=False, plot_sp
     if plot_individual:
         for m in list_measuremts:
             visualisation.heatMap(m)
-            plt.show()
+
 
     if plot_overall:
         overall = visualisation.averageDataFrame(list_measuremts)
         visualisation.heatMap(overall)
-        plt.show()
+
 
     if plot_specific:
         if specific_name == None:
             keyword = visualisation.keywordExample(list_measuremts, 'DoS attack')
             visualisation.heatMap(keyword)
-            plt.show()
+
         else:
             keyword = visualisation.keywordExample(list_measuremts, specific_name)
             visualisation.heatMap(keyword)
-            plt.show()
+
 
     if plot_vectorReduction:
         visualisation.buildingGraphDF(aritcles_corpus, article_dict, words_dict, keywords, option=vecReductionOption)
-        plt.show()
 
 
+#runs each Q
 def main(qOne=False, qTwo=False, qThree=False, qFour=False):
     if qOne:
         keyWordWebpageContent()
@@ -890,8 +1075,18 @@ def main(qOne=False, qTwo=False, qThree=False, qFour=False):
         print("WARNING from ldzc78: please ensure you have run Question(s): 1 previously")
         articleContentCollection()
     if qThree:
+        """
+        if there rea ny errors with any of the distance methods, turn them to false below
+        """
         print("WARNING from ldzc78: please ensure you have run Question(s): 1,2 previously")
         list_measuremts, overall = symanticSimilarityScoring(jaccard=True, glove=True, DOCtoVEC=True)
+
+        df2 = overall.copy()
+        with pd.ExcelWriter('distance.xlsx') as writer:
+            overall.to_excel(writer, sheet_name='distance_Sheet_1', index_label='Keywords')
+
+
+        print(list_measuremts)
     if qFour:
         print("WARNING from ldzc78: please ensure you have run Question(s): 1,2 previously")
         print("WARNING from ldzc78: running Q3 to get measurements")
@@ -901,4 +1096,10 @@ def main(qOne=False, qTwo=False, qThree=False, qFour=False):
 
 
 if __name__ == '__main__':
-    main(qOne=True, qTwo=True, qThree=False, qFour=True)
+    """
+    select a question to run
+    NOTE: due to matplotlib not being allowed for Q4,  graphs will not automatically by displayed
+    NOTE: questions should be run in chronological order when run for the first time
+    """
+    #edit below to choose witch question to run
+    main(qOne=True, qTwo=True, qThree=True, qFour=True)
